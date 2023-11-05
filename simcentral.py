@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import configparser
 import subprocess
+from briefing import *
 
 # Initialization
 config = configparser.RawConfigParser()
@@ -117,6 +118,12 @@ def save_config():
             entry_3 = none
             entry_4 = none
             entry_5 = none
+
+            [IRACING]
+            irating_difference = 300
+            email = none
+            series_gt3_fanatec_challenge_fixed = 0
+            imsa_iracing_series_fixed = 0
             """
         with open(filename, "w") as f:
             f.write(config_template)
@@ -158,6 +165,16 @@ def save_config():
         config.set('SETTINGS', 'autosave_changes', '1')
     else:
         config.set('SETTINGS', 'autosave_changes', '0')
+    config.set('IRACING', 'email', entry_iracing_email.get())
+    config.set('IRACING', 'irating_difference', entry_irating_diff.get())
+    if chkbtn_iracing_fanatec_challenge.instate(['selected']):
+        config.set('IRACING', 'series_gt3_fanatec_challenge_fixed', '1')
+    else:
+        config.set('IRACING', 'series_gt3_fanatec_challenge_fixed', '0')
+    if chkbtn_iracing_imsa_fixed_gtp.instate(['selected']):
+        config.set('IRACING', 'imsa_iracing_series_fixed', '1')
+    else:
+        config.set('IRACING', 'imsa_iracing_series_fixed', '0')
 
     # Write the config
     with open(filename, "w") as f:
@@ -190,6 +207,12 @@ entry_2 = none
 entry_3 = none
 entry_4 = none
 entry_5 = none
+
+[IRACING]
+irating_difference = 300
+email = none
+series_gt3_fanatec_challenge_fixed = 0
+imsa_iracing_series_fixed = 0
             """
         with open(filename, "w") as f:
             f.write(config_template)
@@ -253,14 +276,71 @@ entry_5 = none
             chkbtn_autostart_tools.setvar('chkbtn_autosave_changes_state', 1)
         else:
             chkbtn_autostart_tools.setvar('chkbtn_autosave_changes_state', 0)
+        entry_iracing_email.insert(0,config['IRACING']['email'])
+        entry_irating_diff.insert(0, config['IRACING']['irating_difference'])
+        if config['IRACING']['series_gt3_fanatec_challenge_fixed'] == "1":
+            chkbtn_iracing_fanatec_challenge.setvar('chkbtn_iracing_fanatec_challenge_state', 1)
+        else: 
+            chkbtn_iracing_fanatec_challenge.setvar('chkbtn_iracing_fanatec_challenge_state', 0)
+        if config['IRACING']['imsa_iracing_series_fixed'] == "1":
+            chkbtn_iracing_fanatec_challenge.setvar('chkbtn_iracing_imsa_fixed_gtp_state', 1)
+        else: 
+            chkbtn_iracing_fanatec_challenge.setvar('chkbtn_iracing_imsa_fixed_gtp_state', 0)
 
+def start_briefing():
+    briefing_button.configure(text='Running...')
 
+    # Ask user for his iracing password
+    iracing_pw = tk.simpledialog.askstring("Password", "Enter iRacing password:", show='*', parent=window)
+    # Login to the API and return cookies
+    cookies = authenticate(config['IRACING']['email'], iracing_pw)
+    # Get road irating
+    road_irating = get_road_irating(cookies)
+    briefing_log.insert(tk.INSERT, '[+] Current iRating: ' + str(road_irating))
+    ## SEASON START
+    # Get current season_year and season_quarter
+    season_year, season_quarter = get_season_details(cookies)
+    briefing_log.insert(tk.INSERT, '\n[+] Current season: ' + str(season_year) + '/' + str(season_quarter))
+    ## SERIES START
+    # Get the full series list
+    full_series_list = get_full_series_list(cookies)
+    # GT3 Fanatec Challenge - Fixed
+    if config['IRACING']['series_gt3_fanatec_challenge_fixed'] == "1":
+        briefing_log.insert(tk.INSERT, '\n[++] GT3 Fanatec Challenge - Fixed')
+        car_class_id = "2708"
+        GT3_Fanatec_Challenge_Fixed_ID = get_gt3_fanatec_challenge_fixed_id(full_series_list)
+        if GT3_Fanatec_Challenge_Fixed_ID:
+            briefing_log.insert(tk.INSERT, '\n[+++] ID is: ' + str(GT3_Fanatec_Challenge_Fixed_ID))
+            briefing_log.insert(tk.INSERT, '\n[+++] Getting GT3 Fanatec Challenge - Fixed results...')
+            track, required_avg_laptime = series_results_worker(cookies, GT3_Fanatec_Challenge_Fixed_ID, season_year, season_quarter, road_irating, int(config['IRACING']['irating_difference']), car_class_id)
+            briefing_log.insert(tk.INSERT, '\n[+++] Current track is: ' + str(track))
+            briefing_log.insert(tk.INSERT, '\n[+++] Required average lap time for your rating is: ' + str(required_avg_laptime) + '\n')
+        else:
+            briefing_log.insert(tk.INSERT, '\n[+++] Didn\'t find the series - exiting...\n')
+            exit
+    # IMSA iRacing Series - Fixed
+    if config['IRACING']['imsa_iracing_series_fixed'] == "1":
+        car_class_id = "4029"
+        briefing_log.insert(tk.INSERT, '\n[++] IMSA iRacing Series - Fixed')
+        IMSA_Fixed_ID = get_imsa_fixed_id(full_series_list)
+        if IMSA_Fixed_ID:
+            briefing_log.insert(tk.INSERT, '\n[+++] ID is: ' + str(IMSA_Fixed_ID))
+            briefing_log.insert(tk.INSERT, '\n[+++] IMSA iRacing Series - Fixed results...')
+            track, required_avg_laptime = series_results_worker(cookies, IMSA_Fixed_ID, season_year, season_quarter, road_irating, int(config['IRACING']['irating_difference']), car_class_id)
+            briefing_log.insert(tk.INSERT, '\n[+++] Current track is: ' + str(track))
+            briefing_log.insert(tk.INSERT, '\n[+++] Required average lap time for your rating is: ' + str(required_avg_laptime) + '\n')
+        else:
+            briefing_log.insert(tk.INSERT, '\n[+++] Didn\'t find the series - exiting...\n')
+            exit
+
+    briefing_button.configure(text='Refresh data')
 
 # Window
 window = ttk.Window(themename='superhero')
 window.title('SimCentral')
 window.iconbitmap("icons8-automation-48.ico")
 window.bind("<FocusOut>", on_focus_out)
+window.resizable(False,False)
 
 # left frame
 left_frame = ttk.Frame(master=window)
@@ -353,8 +433,8 @@ open_button_4.pack(padx=5, side='left')
 open_button_5.pack(padx=5, side='left')
 
 # start_all button
-start_all_button = ttk.Button(master=tab_quickstart, text='Open all', command=lambda:start_all())
-start_all_button.pack(side='right', padx=10, pady=10)
+start_all_button = ttk.Button(master=tab_quickstart, text='Open all', command=lambda:start_all(), width=16)
+start_all_button.pack(side='right', padx=20)
 
 
 # Setups Tab
@@ -370,8 +450,40 @@ setups_notebook.pack(side='left', expand='True', fill='both', padx=5)
 
 # Briefing Tab
 tab_briefing = ttk.Frame(master=notebook)
-
-
+frame_briefing_infos = ttk.Frame(master=tab_briefing)
+frame_briefing_output = ttk.Frame(master=tab_briefing, width=50)
+lbl_briefing_intro = ttk.Label(master=tab_briefing, text='Currently only supported for iRacing. This tool will analyze sessions for the current week and give you an estimated lap time based on your irating.')
+labelframe_input=ttk.LabelFrame(master=frame_briefing_infos, text='Settings')
+labelframe_output=ttk.LabelFrame(master=frame_briefing_output, text='Briefing area')
+labelframe_series=ttk.LabelFrame(master=frame_briefing_infos, text='iRacing Series')
+briefing_button = ttk.Button(master=labelframe_output, text='Start', command=lambda:start_briefing())
+briefing_log = ttk.ScrolledText(master=labelframe_output, wrap = tk.WORD, width=70, height=10) 
+label_iracing_email = ttk.Label(master=labelframe_input, text='iRacing eMail: ')
+label_irating_diff = ttk.Label(master=labelframe_input, text='irating difference: ')
+label_irating_diff_recommended = ttk.Label(master=labelframe_input, text='Recommended: 300 ')
+entry_iracing_email = ttk.Entry(master=labelframe_input, width=30)
+entry_irating_diff = ttk.Entry(master=labelframe_input, width=4, justify='center')
+chkbtn_iracing_fanatec_challenge = ttk.Checkbutton(master=labelframe_series, style='Roundtoggle.Toolbutton', variable='chkbtn_iracing_fanatec_challenge_state', command=lambda:checkCheckbuttonState("8"))
+chkbtn_iracing_imsa_fixed_gtp = ttk.Checkbutton(master=labelframe_series, style='Roundtoggle.Toolbutton', variable='chkbtn_iracing_imsa_fixed_gtp_state', command=lambda:checkCheckbuttonState("9"))
+label_iracing_fanatec_challenge = ttk.Label(master=labelframe_series, text='GT3 Fanatec Challenge Fixed')
+label_iracing_imsa_fixed_GTP = ttk.Label(master=labelframe_series, text='IMSA iRacing Series - Fixed (GTP)')
+lbl_briefing_intro.grid(row=0,column=0, padx=5, pady=10, sticky='nw', columnspan=2)
+frame_briefing_infos.grid(row=0, column=0, sticky='nw', pady=30)
+frame_briefing_output.grid(row=0, column=1, sticky='nw', pady=30)
+labelframe_input.grid(row=1,column=0, padx=5, pady=10, sticky='nw')
+labelframe_output.grid(row=1,column=1, padx=5, pady=10, sticky='ne')
+labelframe_series.grid(row=2, column=0, padx=5, sticky='nw')
+label_iracing_email.grid(row=0, column=0, sticky='w', padx=5)
+entry_iracing_email.grid(row=0, column=1, padx=5, sticky='w')
+label_irating_diff.grid(row=1, column=0, sticky='w', padx=5)
+entry_irating_diff.grid(row=1, column=1, padx=5, pady=5, sticky='w')
+label_irating_diff_recommended.grid(row=1, column=1, padx=40, sticky='e')
+chkbtn_iracing_fanatec_challenge.grid(row=0, column=0, padx=5, pady=5)
+chkbtn_iracing_imsa_fixed_gtp.grid(row=1, column=0, padx=5, pady=5)
+label_iracing_fanatec_challenge.grid(row=0, column=1, sticky='w', padx=5)
+label_iracing_imsa_fixed_GTP.grid(row=1, column=1, sticky='w', padx=5)
+briefing_button.grid(row=0, column=0, padx=5, pady=5)
+briefing_log.grid(row=1, column=0, padx=5, pady=5, sticky='w')
 
 # Tab settings
 tab_settings = ttk.Frame(master=notebook)
